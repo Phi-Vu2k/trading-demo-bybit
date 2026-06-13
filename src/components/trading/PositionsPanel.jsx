@@ -4,7 +4,7 @@ import {
   TableHead, TableRow, Button, Chip,
 } from '@mui/material';
 import { useStore, selPositions, selOpenOrders, selOrderHistory } from '../../store';
-import { cancelOrder } from '../../api/binance';
+import { cancelOrder, getWalletBalance, getOpenOrders, getOrderHistory } from '../../api/binance';
 import { mkNotif } from '../../store';
 
 const hdr = { borderBottom: '1px solid #0e0e1e', color: '#4b5563', fontSize: 10, py: 0.6, px: 1, fontFamily: 'monospace' };
@@ -16,6 +16,9 @@ const PositionsPanel = memo(function PositionsPanel() {
   const openOrders = useStore(selOpenOrders);
   const history    = useStore(selOrderHistory);
   const pushNotif  = useStore(s => s.pushNotif);
+  const setWallet  = useStore(s => s.setWallet);
+  const setOpenOrders = useStore(s => s.setOpenOrders);
+  const setOrderHistory = useStore(s => s.setOrderHistory);
   const category   = useStore(s => s.activeCategory);
 
   const handleCancel = useCallback(async (sym, orderId) => {
@@ -23,9 +26,30 @@ const PositionsPanel = memo(function PositionsPanel() {
       const res = await cancelOrder(category === 'linear' ? 'linear' : 'spot', sym, orderId);
       if (res.retCode === 0) {
         pushNotif(mkNotif('warning', '⚪ Order Cancelled', `Order ${orderId.slice(0, 8)}... cancelled`));
+        const refreshData = async () => {
+          try {
+            const [bal, spotOrders, linearOrders, histRes] = await Promise.all([
+              getWalletBalance(),
+              getOpenOrders('spot'),
+              getOpenOrders('linear'),
+              getOrderHistory(category === 'linear' ? 'linear' : 'spot', 100),
+            ]);
+            const list = bal?.result?.list?.[0];
+            if (list) {
+              setWallet(list.coin || [], parseFloat(list.totalEquity || 0), parseFloat(list.totalPerpUPL || 0));
+            }
+            setOpenOrders([
+              ...(spotOrders?.result?.list || []),
+              ...(linearOrders?.result?.list || []),
+            ]);
+            setOrderHistory(histRes?.result?.list || []);
+          } catch (e) {}
+        };
+        refreshData();
+        setTimeout(refreshData, 800);
       }
     } catch (e) {}
-  }, [category]);
+  }, [category, pushNotif, setWallet, setOpenOrders, setOrderHistory]);
 
   const tabs = [
     `Positions (${positions.length})`,

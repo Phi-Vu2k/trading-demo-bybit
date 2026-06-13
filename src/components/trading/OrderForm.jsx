@@ -6,7 +6,7 @@ import {
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { useStore, selSymbol, selCategory, selOrderForm, selWallet, mkNotif } from '../../store';
 import { useShallow } from 'zustand/react/shallow';
-import { placeOrder, setLeverage as apiSetLeverage } from '../../api/binance';
+import { placeOrder, setLeverage as apiSetLeverage, getWalletBalance, getOpenOrders, getOrderHistory } from '../../api/binance';
 
 const PCT = [25, 50, 75, 100];
 
@@ -43,6 +43,7 @@ const OrderForm = memo(function OrderForm() {
   const {
     setOrderSide, setOrderType, setOrderPrice, setOrderQty, setLeverage,
     setTpEnabled, setSlEnabled, setTpPrice, setSlPrice, pushNotif,
+    setWallet, setOpenOrders, setOrderHistory,
   } = useStore(useShallow(s => ({
     setOrderSide: s.setOrderSide, setOrderType: s.setOrderType,
     setOrderPrice: s.setOrderPrice, setOrderQty: s.setOrderQty,
@@ -50,6 +51,9 @@ const OrderForm = memo(function OrderForm() {
     setTpEnabled: s.setTpEnabled, setSlEnabled: s.setSlEnabled,
     setTpPrice: s.setTpPrice, setSlPrice: s.setSlPrice,
     pushNotif: s.pushNotif,
+    setWallet: s.setWallet,
+    setOpenOrders: s.setOpenOrders,
+    setOrderHistory: s.setOrderHistory,
   })));
 
   const [submitting, setSubmitting] = useState(false);
@@ -105,6 +109,30 @@ const OrderForm = memo(function OrderForm() {
         pushNotif(mkNotif('success', `✅ Order Placed`, `${form.side} ${form.qty} ${symbol} @ ${form.type === 'Market' ? 'Market' : form.price}`));
         setOrderQty('');
         setTpPrice(''); setSlPrice('');
+
+        const refreshData = async () => {
+          try {
+            const [bal, spotOrders, linearOrders, histRes] = await Promise.all([
+              getWalletBalance(),
+              getOpenOrders('spot'),
+              getOpenOrders('linear'),
+              getOrderHistory(category === 'linear' ? 'linear' : 'spot', 100),
+            ]);
+            const list = bal?.result?.list?.[0];
+            if (list) {
+              setWallet(list.coin || [], parseFloat(list.totalEquity || 0), parseFloat(list.totalPerpUPL || 0));
+            }
+            setOpenOrders([
+              ...(spotOrders?.result?.list || []),
+              ...(linearOrders?.result?.list || []),
+            ]);
+            setOrderHistory(histRes?.result?.list || []);
+          } catch (e) {
+            console.error('Failed to refresh data:', e);
+          }
+        };
+        refreshData();
+        setTimeout(refreshData, 800);
       } else {
         pushNotif(mkNotif('error', '❌ Order Failed', res.retMsg || 'Unknown error'));
       }
@@ -113,7 +141,7 @@ const OrderForm = memo(function OrderForm() {
     } finally {
       setSubmitting(false);
     }
-  }, [form, symbol, isFuture]);
+  }, [form, symbol, isFuture, category, setWallet, setOpenOrders, setOrderHistory, pushNotif]);
 
   return (
     <Box sx={{ bgcolor: '#06060f', height: '100%', display: 'flex', flexDirection: 'column', p: 1.5, gap: 1, overflowY: 'auto' }}>
