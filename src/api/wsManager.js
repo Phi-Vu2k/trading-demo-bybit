@@ -1,8 +1,8 @@
-import { startUserDataStream, keepAliveUserDataStream } from './binance';
+import { startFuturesListenKey, keepAliveFuturesListenKey, createSpotWsAuthParams } from './binance';
 
 const WS_PUBLIC_SPOT = 'wss://demo-stream.binance.com/stream';
 const WS_PUBLIC_LINEAR = 'wss://demo-fstream.binance.com/stream';
-const WS_PRIVATE_SPOT = 'wss://demo-stream.binance.com/ws';
+const WS_PRIVATE_SPOT = 'wss://demo-ws-api.binance.com/ws-api/v3';
 const WS_PRIVATE_LINEAR = 'wss://demo-fstream.binance.com/ws';
 
 const intervalMap = {
@@ -135,6 +135,7 @@ class WSManager {
   }
 
   _privateUrl(category) {
+    // Spot uses WS API endpoint directly; Futures uses listenKey appended later
     return category === 'linear' ? WS_PRIVATE_LINEAR : WS_PRIVATE_SPOT;
   }
 
@@ -257,14 +258,76 @@ class WSManager {
     const key = category === 'linear' ? 'privateLinear' : 'privateSpot';
     if (this._sockets[key]?.readyState === WebSocket.OPEN || this._sockets[key]?.readyState === WebSocket.CONNECTING) return;
 
+    if (category === 'linear') {
+      // Futures: still uses listenKey via REST
+      await this._connectPrivateFutures(key);
+    } else {
+      // Spot: uses WebSocket API auth (no more REST listenKey)
+      this._connectPrivateSpot(key);
+    }
+  }
+
+  _connectPrivateSpot(key) {
     try {
-      const listenKey = await startUserDataStream(category);
+      const ws = new WebSocket(WS_PRIVATE_SPOT);
+      this._sockets[key] = ws;
+
+      ws.onopen = () => {
+        // Authenticate via userDataStream.subscribe.signature
+        const authParams = createSpotWsAuthParams();
+        ws.send(JSON.stringify({
+          id: `spot-auth-${Date.now()}`,
+          method: 'userDataStream.subscribe.signature',
+          params: authParams,
+        }));
+      };
+
+      ws.onmessage = e => {
+        try {
+          const msg = JSON.parse(e.data);
+          // Skip auth response (has 'id' field matching our request)
+          if (msg.id && typeof msg.id === 'string' && msg.id.startsWith('spot-auth-')) {
+            if (msg.error) {
+              console.error('[WS] Spot auth failed:', msg.error);
+              ws.close();
+            }
+            return;
+          }
+          this._handlePrivateMessage(msg);
+        } catch {}
+      };
+
+      // WS API sends ping frames; browser handles pong automatically.
+      // Also send periodic pong to keep connection alive.
+      this._privateKeepAliveTimers[key] = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ id: `ping-${Date.now()}`, method: 'ping' }));
+        }
+      }, 30 * 1000);
+
+      ws.onclose = () => {
+        clearInterval(this._privateKeepAliveTimers[key]);
+        this._reconnectTimers[key] = setTimeout(() => {
+          delete this._sockets[key];
+          this._connectPrivate('spot');
+        }, 3000);
+      };
+
+      ws.onerror = () => ws.close();
+    } catch (e) {
+      this._reconnectTimers[key] = setTimeout(() => this._connectPrivate('spot'), 10000);
+    }
+  }
+
+  async _connectPrivateFutures(key) {
+    try {
+      const listenKey = await startFuturesListenKey();
       this._privateListenKeys[key] = listenKey;
-      const ws = new WebSocket(`${this._privateUrl(category)}/${listenKey}`);
+      const ws = new WebSocket(`${WS_PRIVATE_LINEAR}/${listenKey}`);
       this._sockets[key] = ws;
 
       this._privateKeepAliveTimers[key] = setInterval(() => {
-        keepAliveUserDataStream(category, listenKey).catch(() => {});
+        keepAliveFuturesListenKey(listenKey).catch(() => {});
       }, 30 * 60 * 1000);
 
       ws.onmessage = e => {
@@ -277,13 +340,13 @@ class WSManager {
         clearInterval(this._privateKeepAliveTimers[key]);
         this._reconnectTimers[key] = setTimeout(() => {
           delete this._sockets[key];
-          this._connectPrivate(category);
+          this._connectPrivate('linear');
         }, 3000);
       };
 
       ws.onerror = () => ws.close();
     } catch (e) {
-      this._reconnectTimers[key] = setTimeout(() => this._connectPrivate(category), 10000);
+      this._reconnectTimers[key] = setTimeout(() => this._connectPrivate('linear'), 10000);
     }
   }
 
