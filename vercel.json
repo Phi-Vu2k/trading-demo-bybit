@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "https://demo-api.binance.com/api/:path*" },
+    { "source": "/fapi/:path*", "destination": "https://demo-fapi.binance.com/fapi/:path*" }
+  ]
+}

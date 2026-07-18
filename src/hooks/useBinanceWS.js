@@ -75,7 +75,7 @@ export function useKlineWS(symbol, interval, category, onUpdate) {
     if (!symbol) return;
     let cancelled = false;
 
-    getKline(symbol, interval, 300, category === 'linear' ? 'linear' : 'spot').then(res => {
+    getKline(symbol, interval, 1000, category === 'linear' ? 'linear' : 'spot').then(res => {
       if (cancelled || !res?.result?.list) return;
       const candles = res.result.list
         .map(([t, o, h, l, c, v]) => ({
