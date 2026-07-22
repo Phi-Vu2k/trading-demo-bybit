@@ -25,7 +25,7 @@ const NotificationsPage = memo(function NotificationsPage() {
   const grouped = groupByDay(notifs);
 
   return (
-    <Box sx={{ p: 2, height: '100%', overflowY: 'auto', bgcolor: '#06060f' }}>
+    <Box sx={{ p: { xs: 1, sm: 2 }, height: '100%', overflowY: 'auto', bgcolor: '#06060f' }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <NotificationsNoneIcon sx={{ color: '#f7a600' }} />

@@ -64,7 +64,7 @@ const Portfolio = memo(function Portfolio() {
   const isPnlUp = pnl >= 0;
 
   return (
-    <Box sx={{ p: 2, height: '100%', overflowY: 'auto', bgcolor: '#06060f' }}>
+    <Box sx={{ p: { xs: 1, sm: 2 }, height: '100%', overflowY: 'auto', bgcolor: '#06060f' }}>
       {/* Summary cards */}
       <Grid container spacing={1.5} sx={{ mb: 2 }}>
         <Grid item xs={12} sm={4}>
